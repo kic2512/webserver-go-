@@ -1,0 +1,12 @@
+// tut
+package main
+
+import (
+	"fmt"	
+)
+
+func main() {
+	var input string
+	fmt.Scanf("%f", &input)
+	fmt.Println(input)
+}
