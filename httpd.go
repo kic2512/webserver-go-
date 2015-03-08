@@ -56,7 +56,7 @@ func main() {
 
 	}
 	runtime.GOMAXPROCS(ncpu)
-	port := ":7777"
+	port := ":80"
 	address, err := net.ResolveTCPAddr("127.0.0.1", port)
 	checkError(err)
 	listener, err := net.ListenTCP("tcp", address)
