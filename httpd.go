@@ -55,10 +55,6 @@ func main() {
 		}
 
 	}
-	fmt.Print("[")
-	fmt.Print(DOCUMENT_ROOT)
-	fmt.Print("]")
-	fmt.Println("")
 	runtime.GOMAXPROCS(ncpu)
 	port := ":7777"
 	address, err := net.ResolveTCPAddr("127.0.0.1", port)
@@ -67,7 +63,6 @@ func main() {
 	for {
 		conn, err := listener.Accept()
 		if err == nil && conn != nil {
-			fmt.Println("New Client")
 			go handleClient(conn, DOCUMENT_ROOT)
 		} else {
 			fmt.Println(err.Error())
@@ -88,7 +83,7 @@ func handleClient(conn net.Conn, DOCUMENT_ROOT string) {
 	var buf [1024 * 8]byte
 	_, err := conn.Read(buf[0:])
 	if err != nil {
-		panic("Can not read from request")
+		return
 	}
 
 	re11, _ := regexp.Compile(`(GET) (.*) HTTP.*`)
@@ -119,11 +114,6 @@ func makeResponse(conn net.Conn, query, method, DOCUMENT_ROOT string) {
 	if err != nil {
 		STATUS_CODE = STATUS_MAP["404"]
 	}
-
-	fmt.Println("query")
-	fmt.Println(query)
-	fmt.Println("path")
-	fmt.Println(DOCUMENT_ROOT + file_name)
 
 	dat, local_code, err := check_n_read_file(DOCUMENT_ROOT, file_name)
 
