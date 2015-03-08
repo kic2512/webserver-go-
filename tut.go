@@ -3,12 +3,30 @@ package main
 
 import (
 	"fmt"
-	"regexp"
-	"strings"
+	"os"
 )
 
 func main() {
-	s := "GET / HTTP/1.1\r\nHost: 127.0.0.1 Content-Type: application/octet-stream\r\n\r\n"
-	result := strings.Split(s, ' ')
-	fmt.Printf(result)
+	i := 1
+	DOCUMENT_ROOT := "No"
+	numproc := "1"
+	fmt.Println(len(os.Args))
+	for i < len(os.Args) {
+		switch os.Args[i] {
+		case "-r":
+			i += 1
+			DOCUMENT_ROOT = os.Args[i]
+
+		case "-c":
+			i += 1
+			numproc = os.Args[i]
+		default:
+			i += 1
+		}
+
+	}
+	fmt.Println("root")
+	fmt.Println(DOCUMENT_ROOT)
+	fmt.Println("num")
+	fmt.Println(numproc)
 }
