@@ -128,13 +128,6 @@ func makeResponse(conn net.Conn, query, method, DOCUMENT_ROOT string) {
 	server := RESP_HEADERS["server"]
 	connection := RESP_HEADERS["connection"]
 
-	var log_map = map[string]string{
-		"status":    status,
-		"content":   content_type,
-		"file_name": file_name,
-		"body_len":  string(len(dat)),
-	}
-
 	_, _ = conn.Write([]byte(status))
 	_, _ = conn.Write([]byte(date))
 	_, _ = conn.Write([]byte(content_type))
@@ -146,7 +139,7 @@ func makeResponse(conn net.Conn, query, method, DOCUMENT_ROOT string) {
 	if STATUS_CODE == STATUS_MAP["200"] && method == "GET" {
 		_, _ = conn.Write(dat[0:])
 	} else {
-		writelog(log_map)
+		return
 	}
 }
 func get_mime_type_by_ext(extention string) string {
@@ -196,8 +189,6 @@ func determinate_mime(file_name string) (string, string, error) {
 
 func check_n_read_file(DOCUMENT_ROOT, file_name string) ([]byte, string, error) {
 	code := "200"
-	fmt.Println("Seek:")
-	fmt.Println(DOCUMENT_ROOT + file_name)
 	dat, err := ioutil.ReadFile(DOCUMENT_ROOT + file_name)
 	if os.IsPermission(err) {
 		code = "403"
@@ -210,19 +201,4 @@ func check_n_read_file(DOCUMENT_ROOT, file_name string) ([]byte, string, error) 
 		}
 	}
 	return dat, code, err
-}
-func writelog(log_map map[string]string) {
-
-	fmt.Println("status code:")
-	fmt.Println(log_map["status"])
-	fmt.Println("mime:")
-	fmt.Println(log_map["content"])
-	fmt.Println("file name : ")
-	fmt.Print(log_map["file_name"])
-	fmt.Print("Q")
-	fmt.Println("")
-	fmt.Print("response start")
-	fmt.Println("")
-	fmt.Println(log_map["body_len"])
-	fmt.Println("response finish")
 }
