@@ -35,19 +35,19 @@ var index_file = "index.html"
 
 func main() {
 	i := 1
-	//DOCUMENT_ROOT := ""
+	DOCUMENT_ROOT := ""
 	ncpu := 1
 	var err error
 	for i < len(os.Args) {
 		switch os.Args[i] {
 		case "-r":
 			i += 1
-			//		DOCUMENT_ROOT = os.Args[i]
+			DOCUMENT_ROOT = os.Args[i]
 		case "-c":
 			i += 1
 			ncpu, err = strconv.Atoi(os.Args[i])
 			if err != nil {
-
+				fmt.Println("-c is a numeric flag")
 				os.Exit(-1)
 			}
 		default:
@@ -55,6 +55,10 @@ func main() {
 		}
 
 	}
+	fmt.Print("[")
+	fmt.Print(DOCUMENT_ROOT)
+	fmt.Print("]")
+	fmt.Println("")
 	runtime.GOMAXPROCS(ncpu)
 	port := ":7777"
 	address, err := net.ResolveTCPAddr("127.0.0.1", port)
@@ -62,10 +66,12 @@ func main() {
 	listener, err := net.ListenTCP("tcp", address)
 	for {
 		conn, err := listener.Accept()
-		if err != nil {
-			continue
+		if err == nil && conn != nil {
+			fmt.Println("New Client")
+			go handleClient(conn, DOCUMENT_ROOT)
+		} else {
+			fmt.Println(err.Error())
 		}
-		go handleClient(conn)
 	}
 
 }
@@ -77,7 +83,7 @@ func checkError(err error) {
 	}
 }
 
-func handleClient(conn net.Conn) {
+func handleClient(conn net.Conn, DOCUMENT_ROOT string) {
 	defer conn.Close()
 	var buf [1024 * 8]byte
 	_, err := conn.Read(buf[0:])
@@ -97,15 +103,14 @@ func handleClient(conn net.Conn) {
 	if header_type != nil { // if request is GET or HEAD
 		method := header_type[1]
 		request_type := header_type[2]
-		makeResponse(conn, request_type, method)
+		makeResponse(conn, request_type, method, DOCUMENT_ROOT)
 	} else {
 		response := fmt.Sprintf(RESP_HEADERS["status"], STATUS_MAP["405"])
 		_, _ = conn.Write([]byte(response))
 		_, _ = conn.Write([]byte("\r\n"))
 	}
 }
-func makeResponse(conn net.Conn, query, method string) {
-	DOCUMENT_ROOT := ""
+func makeResponse(conn net.Conn, query, method, DOCUMENT_ROOT string) {
 	url_path, _ := url.Parse(query)
 
 	file_name, mime_type, err := determinate_mime(url_path.Path[1:]) // remove first slash
@@ -114,6 +119,11 @@ func makeResponse(conn net.Conn, query, method string) {
 	if err != nil {
 		STATUS_CODE = STATUS_MAP["404"]
 	}
+
+	fmt.Println("query")
+	fmt.Println(query)
+	fmt.Println("path")
+	fmt.Println(DOCUMENT_ROOT + file_name)
 
 	dat, local_code, err := check_n_read_file(DOCUMENT_ROOT, file_name)
 
@@ -196,6 +206,8 @@ func determinate_mime(file_name string) (string, string, error) {
 
 func check_n_read_file(DOCUMENT_ROOT, file_name string) ([]byte, string, error) {
 	code := "200"
+	fmt.Println("Seek:")
+	fmt.Println(DOCUMENT_ROOT + file_name)
 	dat, err := ioutil.ReadFile(DOCUMENT_ROOT + file_name)
 	if os.IsPermission(err) {
 		code = "403"
