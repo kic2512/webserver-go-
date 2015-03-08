@@ -97,8 +97,8 @@ func handleClient(conn net.Conn, DOCUMENT_ROOT string) {
 	}
 	if header_type != nil { // if request is GET or HEAD
 		method := header_type[1]
-		request_type := header_type[2]
-		makeResponse(conn, request_type, method, DOCUMENT_ROOT)
+		request := header_type[2]
+		makeResponse(conn, request, method, DOCUMENT_ROOT)
 	} else {
 		response := fmt.Sprintf(RESP_HEADERS["status"], STATUS_MAP["405"])
 		_, _ = conn.Write([]byte(response))
