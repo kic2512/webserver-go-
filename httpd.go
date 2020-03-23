@@ -19,6 +19,7 @@ var statusesMap = map[string]string {
 	"404": "404 Not Found",
 	"403": "403 Forbidden",
 	"405": "405 Method Not Allowed",
+	"415": "415 Unsupported Media Type",
 }
 
 var responsesHeaders = map[string]string {
@@ -30,7 +31,6 @@ var responsesHeaders = map[string]string {
 	"connection":     "Connection: close\r\n",
 }
 
-var extensionsSet = []string{".html", ".jpg", ".jpeg", ".png", ".gif", ".css", ".js", ".swf", ".txt"}
 var indexFile = "index.html"
 
 func main() {
@@ -120,32 +120,46 @@ func makeResponse(conn net.Conn, query, method, DocumentRoot string) {
 	urlPath, _ := url.Parse(query)
 
 	fileName, mimeType, err := determinateMime(urlPath.Path[1:]) // remove first slash
-	statusCode := statusesMap["200"]
 
 	if err != nil {
-		statusCode = statusesMap["404"]
+		return
+	}
+	var dat []byte
+	var responseCode string
+	var isSuccessCode bool
+	if mimeType == "" {
+		responseCode = "415"
+		isSuccessCode = false
+	} else {
+		dat, responseCode, err = readFile(DocumentRoot, fileName)
+		if err != nil {
+			return
+		}
+		isSuccessCode = true
 	}
 
-	dat, responseCode, err := readFile(DocumentRoot, fileName)
-
-	if err != nil {
-		statusCode = statusesMap[responseCode]
-	}
-
+	statusCode := statusesMap[responseCode]
 	status := fmt.Sprintf(responsesHeaders["status"], statusCode)
-	contentType := fmt.Sprintf(responsesHeaders["contentType"], mimeType)
 	date := fmt.Sprintf(responsesHeaders["date"], time.Now().Format(time.RFC850))
-	contentLength := fmt.Sprintf(responsesHeaders["contentLength"], len(dat))
-	server := responsesHeaders["server"]
-	connection := responsesHeaders["connection"]
+
+	var contentType, contentLength, server, connection string
+	if isSuccessCode {
+		contentType = fmt.Sprintf(responsesHeaders["content_type"], mimeType)
+		contentLength = fmt.Sprintf(responsesHeaders["content_length"], len(dat))
+		server = responsesHeaders["server"]
+		connection = responsesHeaders["connection"]
+	}
 
 	_, _ = conn.Write([]byte(status))
 	_, _ = conn.Write([]byte(date))
-	_, _ = conn.Write([]byte(contentType))
-	_, _ = conn.Write([]byte(contentLength))
-	_, _ = conn.Write([]byte(server))
-	_, _ = conn.Write([]byte(connection))
-	_, _ = conn.Write([]byte("\r\n"))
+
+	if isSuccessCode {
+		_, _ = conn.Write([]byte(contentType))
+		_, _ = conn.Write([]byte(contentLength))
+		_, _ = conn.Write([]byte(server))
+		_, _ = conn.Write([]byte(connection))
+		_, _ = conn.Write([]byte("\r\n"))
+	}
 
 	if statusCode == statusesMap["200"] && method == "GET" {
 		_, _ = conn.Write(dat[0:])
