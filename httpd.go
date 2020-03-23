@@ -14,14 +14,14 @@ import (
 	"time"
 )
 
-var STATUS_MAP = map[string]string{
+var statusesMap = map[string]string {
 	"200": "200 OK",
 	"404": "404 Not Found",
 	"403": "403 Forbidden",
 	"405": "405 Method Not Allowed",
 }
 
-var RESP_HEADERS = map[string]string{
+var responsesHeaders = map[string]string {
 	"status":         "HTTP/1.1 %s\r\n",
 	"date":           "Date: %s\r\n",
 	"content_type":   "Content-Type: %s\r\n",
@@ -30,55 +30,66 @@ var RESP_HEADERS = map[string]string{
 	"connection":     "Connection: close\r\n",
 }
 
-var extentions_set = []string{".html", ".jpg", ".jpeg", ".png", ".gif", ".css", ".js", ".swf", ".txt"}
-var index_file = "index.html"
+var extensionsSet = []string{".html", ".jpg", ".jpeg", ".png", ".gif", ".css", ".js", ".swf", ".txt"}
+var indexFile = "index.html"
 
 func main() {
-	i := 1
-	DOCUMENT_ROOT := ""
-	ncpu := 1
+	documentRoot := ""
+	cpuCount := 2
 	var err error
+
+	fmt.Print("Len args: ")
+	fmt.Println(len(os.Args))
+
+	i := 1
 	for i < len(os.Args) {
 		switch os.Args[i] {
 		case "-r":
 			i += 1
-			DOCUMENT_ROOT = os.Args[i]
+			documentRoot = os.Args[i]
+			fmt.Println("Document root: " + documentRoot)
 		case "-c":
 			i += 1
-			ncpu, err = strconv.Atoi(os.Args[i])
+			cpuCount, err = strconv.Atoi(os.Args[i])
 			if err != nil {
 				fmt.Println("-c is a numeric flag")
 				os.Exit(-1)
 			}
+			fmt.Printf("cpu count: %d\n", cpuCount)
 		default:
 			i += 1
 		}
-
 	}
-	runtime.GOMAXPROCS(ncpu)
-	port := ":80"
-	address, err := net.ResolveTCPAddr("127.0.0.1", port)
+
+	runtime.GOMAXPROCS(cpuCount)
+	address, err := net.ResolveTCPAddr("tcp", "127.0.0.1:8080")
 	checkError(err)
+
 	listener, err := net.ListenTCP("tcp", address)
+	checkError(err)
+
 	for {
 		conn, err := listener.Accept()
 		if err == nil && conn != nil {
-			go handleClient(conn, DOCUMENT_ROOT)
+			go handleClient(conn, documentRoot)
 		} else {
 			fmt.Println(err.Error())
 		}
 	}
-
 }
 
 func checkError(err error) {
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Fatal error: %s", err.Error())
+		var ioErr error
+		_, ioErr = fmt.Fprintf(os.Stderr, "Fatal error: %s", err.Error())
+		if ioErr != nil {
+			fmt.Println(ioErr.Error())
+		}
 		os.Exit(1)
 	}
 }
 
-func handleClient(conn net.Conn, DOCUMENT_ROOT string) {
+func handleClient(conn net.Conn, DocumentRoot string) {
 	defer conn.Close()
 	var buf [1024 * 8]byte
 	_, err := conn.Read(buf[0:])
@@ -90,61 +101,62 @@ func handleClient(conn net.Conn, DOCUMENT_ROOT string) {
 	re12, _ := regexp.Compile(`(HEAD) (.*) HTTP.*`)
 	re2, _ := regexp.Compile(`(?m)^Host: (.*)`)
 
-	header_type := re11.FindStringSubmatch(string(buf[:]))
-	if header_type == nil { // if request is not GET
-		header_type = re12.FindStringSubmatch(string(buf[:]))
-		_ = re2.FindStringSubmatch(string(buf[:]))
+	headerType := re11.FindStringSubmatch(string(buf[:]))
+	if headerType == nil { // if request is not GET
+		headerType = re12.FindStringSubmatch(string(buf[:]))
+		_ = re2.FindStringSubmatch(string(buf[:])) // TODO UNDERSTAND WTF ???
 	}
-	if header_type != nil { // if request is GET or HEAD
-		method := header_type[1]
-		request := header_type[2]
-		makeResponse(conn, request, method, DOCUMENT_ROOT)
+	if headerType != nil { // if request is GET or HEAD
+		method := headerType[1]
+		request := headerType[2]
+		makeResponse(conn, request, method, DocumentRoot)
 	} else {
-		response := fmt.Sprintf(RESP_HEADERS["status"], STATUS_MAP["405"])
+		response := fmt.Sprintf(responsesHeaders["status"], statusesMap["405"])
 		_, _ = conn.Write([]byte(response))
 		_, _ = conn.Write([]byte("\r\n"))
 	}
 }
-func makeResponse(conn net.Conn, query, method, DOCUMENT_ROOT string) {
-	url_path, _ := url.Parse(query)
+func makeResponse(conn net.Conn, query, method, DocumentRoot string) {
+	urlPath, _ := url.Parse(query)
 
-	file_name, mime_type, err := determinate_mime(url_path.Path[1:]) // remove first slash
-	STATUS_CODE := STATUS_MAP["200"]
-
-	if err != nil {
-		STATUS_CODE = STATUS_MAP["404"]
-	}
-
-	dat, local_code, err := check_n_read_file(DOCUMENT_ROOT, file_name)
+	fileName, mimeType, err := determinateMime(urlPath.Path[1:]) // remove first slash
+	statusCode := statusesMap["200"]
 
 	if err != nil {
-		STATUS_CODE = STATUS_MAP[local_code]
+		statusCode = statusesMap["404"]
 	}
 
-	status := fmt.Sprintf(RESP_HEADERS["status"], STATUS_CODE)
-	content_type := fmt.Sprintf(RESP_HEADERS["content_type"], mime_type)
-	date := fmt.Sprintf(RESP_HEADERS["date"], time.Now().Format(time.RFC850))
-	content_length := fmt.Sprintf(RESP_HEADERS["content_length"], len(dat))
-	server := RESP_HEADERS["server"]
-	connection := RESP_HEADERS["connection"]
+	dat, responseCode, err := readFile(DocumentRoot, fileName)
+
+	if err != nil {
+		statusCode = statusesMap[responseCode]
+	}
+
+	status := fmt.Sprintf(responsesHeaders["status"], statusCode)
+	contentType := fmt.Sprintf(responsesHeaders["contentType"], mimeType)
+	date := fmt.Sprintf(responsesHeaders["date"], time.Now().Format(time.RFC850))
+	contentLength := fmt.Sprintf(responsesHeaders["contentLength"], len(dat))
+	server := responsesHeaders["server"]
+	connection := responsesHeaders["connection"]
 
 	_, _ = conn.Write([]byte(status))
 	_, _ = conn.Write([]byte(date))
-	_, _ = conn.Write([]byte(content_type))
-	_, _ = conn.Write([]byte(content_length))
+	_, _ = conn.Write([]byte(contentType))
+	_, _ = conn.Write([]byte(contentLength))
 	_, _ = conn.Write([]byte(server))
 	_, _ = conn.Write([]byte(connection))
 	_, _ = conn.Write([]byte("\r\n"))
 
-	if STATUS_CODE == STATUS_MAP["200"] && method == "GET" {
+	if statusCode == statusesMap["200"] && method == "GET" {
 		_, _ = conn.Write(dat[0:])
 	} else {
 		return
 	}
 }
-func get_mime_type_by_ext(extention string) string {
+func getMimeTypeByExt(extension string) string {
 	result := ""
-	switch extention {
+	extension = strings.ToLower(extension)
+	switch extension {
 	case ".html":
 		result = "text/html"
 	case ".txt":
@@ -167,34 +179,31 @@ func get_mime_type_by_ext(extention string) string {
 	return result
 }
 
-func idx_after_ext(path string, extentions_set string) int {
-	return strings.Index(path, extentions_set) + len(extentions_set)
-}
-func determinate_mime(file_name string) (string, string, error) {
-	mime_type := get_mime_type_by_ext(".html")
-	result_name := index_file
-	for s := range extentions_set {
-		if strings.Contains(file_name, extentions_set[s]) {
-			mime_type = get_mime_type_by_ext(extentions_set[s])
-			sub_str_end_idx := idx_after_ext(file_name, extentions_set[s])
-			result_name = file_name[0:sub_str_end_idx]
-			return result_name, mime_type, nil
-		}
+func determinateMime(fileName string) (string, string, error) {
+	var mimeType string
+	var resultName string
+
+	nameParts := strings.Split(fileName, ".")
+	if len(nameParts) > 1 {
+		lastExt := nameParts[len(nameParts)-1]
+		mimeType = getMimeTypeByExt("." + lastExt)
+		resultName = fileName
+	} else {
+		mimeType = getMimeTypeByExt(".html")
+		resultName = indexFile
 	}
-	if len(file_name) > 1 {
-		result_name = file_name + index_file
-	}
-	return result_name, mime_type, nil
+
+	return resultName, mimeType, nil
 }
 
-func check_n_read_file(DOCUMENT_ROOT, file_name string) ([]byte, string, error) {
+func readFile(DocumentRoot, fileName string) ([]byte, string, error) {
 	code := "200"
-	dat, err := ioutil.ReadFile(DOCUMENT_ROOT + file_name)
+	dat, err := ioutil.ReadFile(DocumentRoot + fileName)
 	if os.IsPermission(err) {
 		code = "403"
 	}
 	if os.IsNotExist(err) {
-		if strings.Contains(file_name, index_file) {
+		if strings.Contains(fileName, indexFile) {
 			code = "403"
 		} else {
 			code = "404"
