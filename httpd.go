@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"path/filepath"
 	"regexp"
 	"runtime"
 	"strconv"
@@ -62,7 +63,7 @@ func main() {
 	}
 
 	runtime.GOMAXPROCS(cpuCount)
-	address, err := net.ResolveTCPAddr("tcp", "127.0.0.1:8080")
+	address, err := net.ResolveTCPAddr("tcp", "0.0.0.0:8080")
 	checkError(err)
 
 	listener, err := net.ListenTCP("tcp", address)
@@ -99,12 +100,11 @@ func handleClient(conn net.Conn, DocumentRoot string) {
 
 	re11, _ := regexp.Compile(`(GET) (.*) HTTP.*`)
 	re12, _ := regexp.Compile(`(HEAD) (.*) HTTP.*`)
-	re2, _ := regexp.Compile(`(?m)^Host: (.*)`)
+	//re2, _ := regexp.Compile(`(?m)^Host: (.*)`)
 
 	headerType := re11.FindStringSubmatch(string(buf[:]))
 	if headerType == nil { // if request is not GET
 		headerType = re12.FindStringSubmatch(string(buf[:]))
-		_ = re2.FindStringSubmatch(string(buf[:])) // TODO UNDERSTAND WTF ???
 	}
 	if headerType != nil { // if request is GET or HEAD
 		method := headerType[1]
@@ -211,15 +211,25 @@ func determinateMime(fileName string) (string, string, error) {
 }
 
 func readFile(DocumentRoot, fileName string) ([]byte, string, error) {
+	var dat []byte
 	code := "200"
-	dat, err := ioutil.ReadFile(DocumentRoot + fileName)
+	absolutePath, err := filepath.Abs(DocumentRoot + fileName)
+
+	if err != nil {
+		fmt.Println(err.Error())
+		return nil, "", err
+	}
+
+	if !strings.HasPrefix(absolutePath, DocumentRoot) { // don't return file which outside the project
+		code = "403"
+		return nil, code, nil
+	}
+
+	dat, err = ioutil.ReadFile(DocumentRoot + fileName)
 	if os.IsPermission(err) {
 		code = "403"
-	}
-	if os.IsNotExist(err) {
-		if strings.Contains(fileName, indexFile) {
-			code = "403"
-		} else {
+	} else {
+		if os.IsNotExist(err) {
 			code = "404"
 		}
 	}
