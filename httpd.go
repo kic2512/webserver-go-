@@ -1,8 +1,8 @@
-// httpd
 package main
 
 import (
 	"fmt"
+	log "github.com/sirupsen/logrus"
 	"io/ioutil"
 	"net"
 	"net/url"
@@ -15,7 +15,7 @@ import (
 	"time"
 )
 
-var statusesMap = map[string]string {
+var statusesMap = map[string]string{
 	"200": "200 OK",
 	"404": "404 Not Found",
 	"403": "403 Forbidden",
@@ -23,7 +23,7 @@ var statusesMap = map[string]string {
 	"415": "415 Unsupported Media Type",
 }
 
-var responsesHeaders = map[string]string {
+var responsesHeaders = map[string]string{
 	"status":         "HTTP/1.1 %s\r\n",
 	"date":           "Date: %s\r\n",
 	"content_type":   "Content-Type: %s\r\n",
@@ -32,11 +32,13 @@ var responsesHeaders = map[string]string {
 	"connection":     "Connection: close\r\n",
 }
 
-var indexFile = "index.html"
+const indexFile = "index.html"
 
 func main() {
 	documentRoot := ""
 	cpuCount := 2
+	host := "0.0.0.0"
+	port := "8080"
 	var err error
 
 	fmt.Print("Len args: ")
@@ -57,36 +59,43 @@ func main() {
 				os.Exit(-1)
 			}
 			fmt.Printf("cpu count: %d\n", cpuCount)
+		case "-h":
+			i += 1
+			host = os.Args[i]
+		case "-p":
+			i += 1
+			port = os.Args[i]
 		default:
 			i += 1
 		}
 	}
 
+	log.SetFormatter(&log.JSONFormatter{})
+	log.SetFormatter(&log.TextFormatter{
+		DisableColors: false,
+		FullTimestamp: true,
+	})
+
 	runtime.GOMAXPROCS(cpuCount)
-	address, err := net.ResolveTCPAddr("tcp", "0.0.0.0:8080")
-	checkError(err)
+	address, err := net.ResolveTCPAddr("tcp", fmt.Sprintf("%s:%s", host, port))
+
+	if err != nil {
+		log.Fatal(fmt.Sprintf("Unable to connect host: %s; port: %s", host, port), err)
+	}
 
 	listener, err := net.ListenTCP("tcp", address)
-	checkError(err)
+
+	if err != nil {
+		log.Fatal("Unable to establish TCP connection", err)
+	}
 
 	for {
 		conn, err := listener.Accept()
 		if err == nil && conn != nil {
 			go handleClient(conn, documentRoot)
 		} else {
-			fmt.Println(err.Error())
+			log.Error("can not handle client request", err, conn)
 		}
-	}
-}
-
-func checkError(err error) {
-	if err != nil {
-		var ioErr error
-		_, ioErr = fmt.Fprintf(os.Stderr, "Fatal error: %s", err.Error())
-		if ioErr != nil {
-			fmt.Println(ioErr.Error())
-		}
-		os.Exit(1)
 	}
 }
 
@@ -95,12 +104,19 @@ func handleClient(conn net.Conn, DocumentRoot string) {
 	var buf [1024 * 8]byte
 	_, err := conn.Read(buf[0:])
 	if err != nil {
+		log.Error(err.Error())
 		return
 	}
 
 	re11, _ := regexp.Compile(`(GET) (.*) HTTP.*`)
 	re12, _ := regexp.Compile(`(HEAD) (.*) HTTP.*`)
-	//re2, _ := regexp.Compile(`(?m)^Host: (.*)`)
+	re2, _ := regexp.Compile(`(?m)^Host: (.*)\r`)
+
+	dataHost := re2.FindStringSubmatch(string(buf[:]))
+	var requestHost string = ""
+	if len(dataHost) > 1 {
+		requestHost = dataHost[1]
+	}
 
 	headerType := re11.FindStringSubmatch(string(buf[:]))
 	if headerType == nil { // if request is not GET
@@ -109,9 +125,13 @@ func handleClient(conn net.Conn, DocumentRoot string) {
 	if headerType != nil { // if request is GET or HEAD
 		method := headerType[1]
 		request := headerType[2]
+
+		log.Info(fmt.Sprintf("request from %s url %s", requestHost, request))
+
 		makeResponse(conn, request, method, DocumentRoot)
 	} else {
 		response := fmt.Sprintf(responsesHeaders["status"], statusesMap["405"])
+		log.Warn(fmt.Sprintf("method not allowed;\n request: %s", buf[:]))
 		_, _ = conn.Write([]byte(response))
 		_, _ = conn.Write([]byte("\r\n"))
 	}
@@ -122,6 +142,7 @@ func makeResponse(conn net.Conn, query, method, DocumentRoot string) {
 	fileName, mimeType, err := determinateMime(urlPath.Path[1:]) // remove first slash
 
 	if err != nil {
+		log.Error(err.Error())
 		return
 	}
 	var dat []byte
@@ -133,6 +154,7 @@ func makeResponse(conn net.Conn, query, method, DocumentRoot string) {
 	} else {
 		dat, responseCode, err = readFile(DocumentRoot, fileName)
 		if err != nil {
+			log.Error(err.Error())
 			return
 		}
 		isSuccessCode = true
@@ -164,6 +186,7 @@ func makeResponse(conn net.Conn, query, method, DocumentRoot string) {
 	if statusCode == statusesMap["200"] && method == "GET" {
 		_, _ = conn.Write(dat[0:])
 	} else {
+		log.Warn(fmt.Sprintf("empty response for query %s; method: %s", query, method))
 		return
 	}
 }
@@ -216,7 +239,7 @@ func readFile(DocumentRoot, fileName string) ([]byte, string, error) {
 	absolutePath, err := filepath.Abs(DocumentRoot + fileName)
 
 	if err != nil {
-		fmt.Println(err.Error())
+		log.Error(err.Error())
 		return nil, "", err
 	}
 
